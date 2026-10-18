@@ -1,0 +1,6 @@
+{
+  "name": "Tường Học Tập AI",
+  "description": "Nền tảng nộp và chấm bài tập thông minh bằng AI từ ảnh chụp chữ viết tay, vở ô li và đề thi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
