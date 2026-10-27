@@ -24,6 +24,10 @@ export default function App() {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [uploadedName, setUploadedName] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [subject, setSubject] = useState('Toán học');
+  const [gradingResult, setGradingResult] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
   const [samples, setSamples] = useState(initialSamples);
   const [notice, setNotice] = useState('');
@@ -32,13 +36,47 @@ export default function App() {
   const filteredSamples = useMemo(() => samples.filter(s => (s.name + s.subject + s.issue).toLowerCase().includes(search.toLowerCase())), [samples, search]);
 
   const go = (next: View) => { setView(next); setMobileMenu(false); setNotice(''); };
-  const analyze = () => {
-    if (!question.trim() && !uploadedName) {
-      setNotice('Hãy nhập bài làm hoặc tải ảnh bài tập lên trước nhé.');
+  const analyze = async () => {
+    if (!question.trim() && !answer.trim() && !uploadedFile) {
+      setNotice('Hãy nhập đề bài, bài làm hoặc tải ảnh bài tập lên trước nhé.');
       return;
     }
-    setAnalyzed(true);
-    setNotice('Đã tạo bản phân tích minh họa. Giáo viên cần xác nhận trước khi sử dụng kết quả.');
+    setIsAnalyzing(true);
+    setNotice('');
+    setGradingResult(null);
+    try {
+      let imageBase64: string | undefined;
+      if (uploadedFile) {
+        imageBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được ảnh.'));
+          reader.onerror = () => reject(new Error('Không đọc được tệp ảnh.'));
+          reader.readAsDataURL(uploadedFile);
+        });
+      }
+      const response = await fetch('/api/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentTitle: question,
+          studentText: answer,
+          subject,
+          imageBase64,
+          mimeType: uploadedFile?.type || 'image/jpeg'
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error || 'Không thể phân tích bài làm. Vui lòng thử lại.');
+      }
+      setGradingResult(payload.data);
+      setAnalyzed(true);
+      setNotice(payload.isSimulatedNotice || 'Đã nhận kết quả phân tích. Hãy kiểm tra lại trước khi sử dụng để chấm điểm.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Đã xảy ra lỗi khi phân tích bài làm.');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
   const addPractice = () => {
     setSamples(prev => [{ id: Date.now(), name: 'Bài làm mới', subject: 'Bài luyện tập · Đại số', score: 8, status: 'Vừa cập nhật', issue: 'Đã lưu vào tường học tập', color: 'blue' }, ...prev]);
@@ -119,21 +157,29 @@ export default function App() {
           </>}
 
           {view === 'analysis' && <section className="workspace-page">
-            <div className="section-heading"><div><div className="eyebrow"><span className="eyebrow-dot"/> AI ROOT-CAUSE TRACER</div><h1>Truy gốc lỗi bài làm</h1><p className="page-subtitle">Nhập bài làm hoặc tải ảnh lên để xem quy trình phân tích minh họa.</p></div><div className="demo-badge"><ShieldCheck size={15}/> Chế độ trải nghiệm</div></div>
-            <div className="analysis-layout"><div className="panel input-panel"><div className="panel-heading"><div><h3><FileText size={18}/> Bài làm cần phân tích</h3><p>Thông tin được dùng trong phiên demo này</p></div><span className="step-number">01</span></div>
-              <label className="field-label">Môn học</label><select className="select-field" defaultValue="math"><option value="math">Toán học</option><option value="literature">Ngữ văn</option><option value="english">Tiếng Anh</option><option value="science">Khoa học tự nhiên</option></select>
+            <div className="section-heading"><div><div className="eyebrow"><span className="eyebrow-dot"/> AI ROOT-CAUSE TRACER</div><h1>Truy gốc lỗi bài làm</h1><p className="page-subtitle">Nhập đề bài, bài làm hoặc tải ảnh để gửi đến dịch vụ phân tích AI.</p></div><div className="demo-badge"><ShieldCheck size={15}/> AI có xác nhận</div></div>
+            <div className="analysis-layout"><div className="panel input-panel"><div className="panel-heading"><div><h3><FileText size={18}/> Bài làm cần phân tích</h3><p>Nội dung sẽ được gửi đến API chấm bài</p></div><span className="step-number">01</span></div>
+              <label className="field-label">Môn học</label><select className="select-field" value={subject} onChange={e => setSubject(e.target.value)}><option>Toán học</option><option>Ngữ văn</option><option>Tiếng Anh</option><option>Khoa học tự nhiên</option></select>
               <label className="field-label">Đề bài / yêu cầu</label><textarea className="text-field" rows={3} value={question} onChange={e => setQuestion(e.target.value)} placeholder="Ví dụ: Giải phương trình 2x + 5 = 13..." />
               <label className="field-label">Bài làm của học sinh</label><textarea className="text-field answer-field" rows={5} value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Nhập các bước làm bài vào đây..." />
-              <input ref={fileRef} type="file" accept="image/*" className="hidden-input" onChange={e => { const f=e.target.files?.[0]; if(f) setUploadedName(f.name); }} />
-              <button className={`upload-zone ${uploadedName ? 'upload-done' : ''}`} onClick={() => fileRef.current?.click()}><span className="upload-icon">{uploadedName ? <CheckCircle2 size={22}/> : <CloudUpload size={23}/>}</span><span><strong>{uploadedName || 'Tải ảnh bài làm lên'}</strong><small>{uploadedName ? 'Đã chọn tệp trên thiết bị · demo chưa gửi lên máy chủ' : 'PNG, JPG hoặc ảnh chụp vở · chọn tệp từ thiết bị'}</small></span><Upload size={18}/></button>
-              <div className="privacy-note"><ShieldCheck size={15}/> Không tải dữ liệu lên máy chủ trong bản demo giao diện này.</div>
-              <button className="primary-btn full-btn" onClick={analyze}><Sparkles size={17}/> Phân tích bài làm <ArrowRight size={16}/></button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden-input" onChange={e => { const f=e.target.files?.[0]; if(f) { if(f.size > 8 * 1024 * 1024) { setNotice("Ảnh quá lớn. Vui lòng chọn ảnh dưới 8 MB."); e.target.value = ""; return; } setUploadedFile(f); setUploadedName(f.name); setAnalyzed(false); setGradingResult(null); } }} />
+              <button className={`upload-zone ${uploadedName ? 'upload-done' : ''}`} onClick={() => fileRef.current?.click()}><span className="upload-icon">{uploadedName ? <CheckCircle2 size={22}/> : <CloudUpload size={23}/>}</span><span><strong>{uploadedName || 'Tải ảnh bài làm lên'}</strong><small>{uploadedName ? 'Ảnh sẽ được gửi khi bạn nhấn phân tích' : 'PNG, JPG hoặc ảnh chụp vở · tối đa 8 MB'}</small></span><Upload size={18}/></button>
+              <div className="privacy-note"><ShieldCheck size={15}/> Ảnh và bài làm được gửi đến API để phân tích; không nhập thông tin cá nhân không cần thiết.</div>
+              <button className="primary-btn full-btn" onClick={analyze} disabled={isAnalyzing}>{isAnalyzing ? <><Activity size={17}/> Đang phân tích...</> : <><Sparkles size={17}/> Phân tích bài làm <ArrowRight size={16}/></>}</button>
             </div>
             <div className="panel results-panel"><div className="panel-heading"><div><h3><BrainCircuit size={19}/> Kết quả truy gốc lỗi</h3><p>Quy trình phân tích minh họa</p></div><span className="step-number">02</span></div>
-              {!analyzed ? <div className="empty-result"><div className="empty-illustration"><BrainCircuit size={44}/><Sparkles size={19} className="empty-spark"/></div><h3>Phân tích sẽ xuất hiện tại đây</h3><p>Nhập đề bài và bài làm, sau đó chọn “Phân tích bài làm” để xem bản minh họa.</p><div className="process-list"><div><span>1</span> Xác định bước làm cần xem xét</div><div><span>2</span> Tìm nguyên nhân có thể gây lỗi</div><div><span>3</span> Đề xuất hướng luyện tập</div></div></div> :
-                <div className="result-content"><div className="result-summary"><span className="result-icon"><AlertCircle size={22}/></span><div><span className="result-kicker">NHẬN ĐỊNH MINH HỌA</span><h3>Cần kiểm tra lại một bước biến đổi</h3><p>Đây là kết quả mẫu, không phải kết luận AI thực tế.</p></div></div><div className="root-cause"><div className="cause-label"><span>01</span> NGUYÊN NHÂN CÓ THỂ</div><strong>Chưa áp dụng nhất quán quy tắc biến đổi</strong><p>Đối chiếu từng dòng với đề bài và yêu cầu học sinh giải thích lý do của mỗi phép biến đổi.</p></div><div className="root-cause solution"><div className="cause-label"><span>02</span> HƯỚNG KHẮC PHỤC</div><strong>Luyện từng bước, kiểm tra bằng phép thay</strong><p>Viết lại phép biến đổi, kiểm tra dấu và thay kết quả vào đề để xác minh.</p></div><div className="teacher-review"><ShieldCheck size={18}/><span><strong>Giáo viên xác nhận</strong><small>Luôn kiểm tra kết quả trước khi chấm điểm hoặc phản hồi cho học sinh.</small></span></div><button className="secondary-btn full-btn" onClick={() => { setAnalyzed(false); setNotice('Bạn có thể chỉnh sửa bài làm và phân tích lại.'); }}>Làm mới phân tích</button></div>}
+              {!analyzed || !gradingResult ? <div className="empty-result"><div className="empty-illustration"><BrainCircuit size={44}/><Sparkles size={19} className="empty-spark"/></div><h3>{isAnalyzing ? 'Đang đọc và phân tích bài làm' : 'Kết quả sẽ xuất hiện tại đây'}</h3><p>{isAnalyzing ? 'Vui lòng đợi trong giây lát.' : 'Nhập đề bài, bài làm hoặc chọn ảnh rồi nhấn “Phân tích bài làm”.'}</p><div className="process-list"><div><span>1</span> Đọc nội dung bài làm</div><div><span>2</span> Xác định lỗi và giải thích</div><div><span>3</span> Đề xuất cách luyện tập</div></div></div> :
+                <div className="result-content">
+                  <div className="result-summary"><span className="result-icon"><CheckCircle2 size={22}/></span><div><span className="result-kicker">KẾT QUẢ PHÂN TÍCH</span><h3>{gradingResult.summaryVerdict || 'Đã phân tích bài làm'}</h3><p>Điểm tham khảo: <strong>{typeof gradingResult.score === 'number' ? gradingResult.score + '/10' : 'Chưa có điểm'}</strong></p></div></div>
+                  {gradingResult.transcription && <div className="root-cause"><div className="cause-label"><span>01</span> NỘI DUNG NHẬN DIỆN</div><p style={{whiteSpace:'pre-wrap'}}>{gradingResult.transcription}</p></div>}
+                  {Array.isArray(gradingResult.strengths) && gradingResult.strengths.length > 0 && <div className="root-cause solution"><div className="cause-label"><span>02</span> ĐIỂM LÀM TỐT</div><ul>{gradingResult.strengths.map((item:string,i:number)=><li key={i}>{item}</li>)}</ul></div>}
+                  {Array.isArray(gradingResult.lineFeedback) && gradingResult.lineFeedback.map((item:any,i:number)=><div className="root-cause" key={i}><div className="cause-label"><span>{String(i+3).padStart(2,'0')}</span> {item.stepOrLine || 'Nhận xét'}</div><strong>{item.status === 'error' ? 'Cần sửa' : item.status === 'warning' ? 'Cần lưu ý' : 'Nhận xét'}</strong><p>{item.detail}</p><p>{item.comment}</p>{item.correction && <p><strong>Cách sửa:</strong> {item.correction}</p>}</div>)}
+                  {gradingResult.overallComment && <div className="teacher-review"><ShieldCheck size={18}/><span><strong>Nhận xét chung</strong><small>{gradingResult.overallComment}</small></span></div>}
+                  {Array.isArray(gradingResult.recommendedPractice) && gradingResult.recommendedPractice.map((item:any,i:number)=><div className="root-cause solution" key={i}><strong>{item.title || 'Bài luyện tập'}</strong><p>{item.question}</p>{item.hint && <p><strong>Gợi ý:</strong> {item.hint}</p>}</div>)}
+                  <button className="secondary-btn full-btn" onClick={() => { setAnalyzed(false); setGradingResult(null); setNotice('Bạn có thể chỉnh sửa bài làm và phân tích lại.'); }}>Làm mới phân tích</button>
+                </div>}
             </div></div>
-            <div className="disclaimer"><CircleHelp size={17}/><p><strong>Lưu ý:</strong> Chức năng phân tích trong phiên bản này là bản demo giao diện. Để AI thực sự đọc ảnh và truy nguyên nhân, cần kết nối dịch vụ AI ở phía máy chủ, bảo vệ API key và kiểm thử độ chính xác.</p></div>
+            <div className="disclaimer"><CircleHelp size={17}/><p><strong>Lưu ý:</strong> Kết quả AI chỉ mang tính tham khảo. Cần giáo viên kiểm tra lại trước khi dùng để chấm điểm chính thức.</p></div>
           </section>}
 
           {view === 'wall' && <section className="workspace-page"><div className="section-heading"><div><div className="eyebrow"><span className="eyebrow-dot"/> CLASS LEARNING WALL</div><h1>Tường học tập lớp 8A4</h1><p className="page-subtitle">Tổng hợp bài làm, ghi nhận tiến bộ và các điểm cần luyện tập.</p></div><button className="primary-btn" onClick={() => go('analysis')}><Plus size={17}/> Thêm bài làm</button></div>
