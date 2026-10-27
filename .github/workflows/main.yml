@@ -32,6 +32,8 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build website
+        env:
+          VITE_BASE_PATH: /tuongai/
         run: npm run build
 
       - name: Upload build artifact
