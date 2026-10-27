@@ -7,7 +7,7 @@ export default defineConfig(() => {
   return {
     // Vercel serves this project from the domain root. Use '/tuongai/' only
     // when deploying to GitHub Pages under /tuongai/.
-    base: '/',
+    base: process.env.VITE_BASE_PATH || '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
